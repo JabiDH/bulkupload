@@ -1,0 +1,252 @@
+﻿<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <title></title>
+</head>
+<body>
+    <div id="upload">
+        <input type="file" multiple webkitdirectory id="folderUpload"/>
+    </div>
+    <div>
+        <ul id="filesList">
+
+        </ul>
+    </div>
+</body>
+</html>
+
+<script src="Scripts/jquery-1.8.2.js"></script>
+<script src="Scripts/underscore-min.js"></script>
+
+<script>
+    $('#folderUpload').change(function (e) {
+        
+        var files = e.target.files;
+        //console.dir(files);
+  
+            
+        // Build Folder Tree Structure Object
+        var root = ConvertToHierarchy(files);
+        //alert("ConvertToHierarchy Done");
+        console.log(root);
+        //console.dir(JSON.stringify(root));
+
+        // Building folders xml tree
+        var out_xml = "<folders>";
+        out_xml += ConvertToXml(root);
+        out_xml += "\n</folders>";
+        console.log(out_xml);
+
+        // Just for output files names
+        var len = files.length;
+        $('#filesList').html("");
+
+        $.each(files, function (i, v) {
+
+            $('#filesList').append("<li>" + v.webkitRelativePath + "</li>");
+        });
+
+        
+
+    });
+
+    
+
+    function ConvertToHierarchy(files)
+    {
+        if (!files)
+            return;
+        var root = { subfolders: {}, files: {} };
+        var stack = [];
+
+        stack.push({ id:0, name:"root", level:-1 });
+        
+        $.each(files, function (index, file) {
+
+            var path = file.webkitRelativePath.split("/"); // convert file path to an array. ex: A/B/C/file.txt => [A][B][C][file.txt]
+            BuildNodeRecursive(root, path, 0, stack);
+
+        });
+
+        return root;
+           
+            
+    }
+
+    function BuildNodeRecursive(node, path, idx, stack)
+    {
+        if (idx == path.length - 1) // File has reach
+        {
+            // Check file extension
+            var ext = (path[idx].split('.')[1]);
+            if (!_.contains(["DOC", "DOCX", "PPT", "PPTX", "XLS", "XLSX", "TXT", "JPG", "PDF", "JPEG", "PNG", "BMP"], ext.toUpperCase()))
+            {
+                return; // Skip the file with the wrong extension
+            }
+            var displayname = path[idx];
+            var arrFile = displayname.split('.');
+            var filename = arrFile[0] +"_"+ Guid() + '.' + arrFile[1];
+            var folderid = GetFolderIdByName(path[path.length - 2], stack, idx - 1);
+            var filepath = "";
+
+            if (!node.files[displayname])
+            {
+                for (var i = 0; i < path.length; i++)
+                {
+                    if (i == path.length - 1) {
+                        filepath += path[i];
+                    }
+                    else {
+                        filepath += path[i] + '\\';
+                    }
+                    
+                }
+
+                node.files[displayname] =
+                    {
+                        filename: filename,
+                        displayname: displayname,
+                        filepath: filepath,                        
+                        uploadedby: "Get User ID",
+                        users: [],
+                    };
+            }
+
+        }
+
+        if (idx < path.length - 1)
+        {
+            var foldername = path[idx];
+            var folderid;
+            var parentid;
+
+            //console.log("folder name "+foldername);
+            //console.log(!node.subfolders[foldername]);
+
+            if (!node.subfolders[foldername]) // if it is null
+            {
+                folderid = GetFolderIdByName(foldername, stack, idx);
+                if(!folderid) // if folderid undefind
+                {
+                    folderid = stack[stack.length - 1].id + 1;
+                }
+
+
+                stack.push({ id: folderid, name: foldername, level: idx });
+                //console.log(" folder push into stack " + folderid);
+
+                if (idx === 0){
+                    parentid = "Get folder id from Documnets where the user has click";
+                }                   
+                else {
+                    parentid = GetFolderIdByName(path[idx-1], stack, idx-1);
+                }
+
+                node.subfolders[foldername] =
+                    {
+                        folderid: folderid,
+                        parentid: parentid,
+                        levelchk: idx,
+                        foldername: foldername,
+                        uploadedby: "Get User ID",
+                        subfolders: {},
+                        files: {}
+                    };
+            }
+            
+            BuildNodeRecursive(node.subfolders[foldername], path, idx + 1, stack);
+        }
+    }
+
+    function GetFolderIdByName(name, stack, level)
+    {
+        var folderid;
+
+        for (var i = 0; i < stack.length; i++)
+        {
+            if (stack[i].name === name && stack[i].level === level)
+            {
+                folderid = stack[i].id;
+                //console.log(" folder from stack " + folderid);
+            }
+
+        }
+
+        return folderid;
+    }
+
+    function Guid()
+    {
+        return s4() + s4() + '-' + s4() + '-' + s4() + '-' +
+           s4() + '-' + s4() + s4() + s4();
+    }
+
+    function s4()
+    {
+        return Math.floor((1 + Math.random()) * 0x10000)
+                   .toString(16)
+                   .substring(1);
+    }
+
+    function ConvertToXml(root)
+    {
+        if (!root)
+            return;
+
+        var folderxml = "";
+        if (root.subfolders)
+        {
+            $.each(root.subfolders, function (index, folder)
+            {
+                //console.log("folder "+ folder);
+                folderxml += BuildXmlNodeRecursive(folder);  // first iteration: folder variable is the top folder of Hierarchy Tree   
+
+                if (folder.subfolders)
+                {
+                    $.each(folder.subfolders, function (index, subfolder) {
+                        console.log(subfolder);
+                        folderxml += BuildXmlNodeRecursive(subfolder);
+                        folderxml += ConvertToXml(subfolder);
+                    });
+                }
+            });            
+        }
+ 
+        return folderxml;
+        
+    }
+
+    function BuildXmlNodeRecursive(folder) {
+
+        if (!folder)
+            return;
+        
+        var xml = "";
+
+        //console.log("Folder : " + folder);
+        xml += "\n<folder>";
+        xml += "\n<levelid>" + folder.folderid + "</levelid>";
+        xml += "\n<parentid>" + folder.parentid + "</parentid>";
+        xml += "\n<levelchk>" + folder.levelchk + "</levelchk>";
+        xml += "\n<folder_name>" + folder.foldername + "</folder_name>";
+        xml += "\n<uploaded_by>" + "Get User ID" + "</uploaded_by>";
+
+        if (folder.files) {
+            xml += "\n<files>";
+            $.each(folder.files, function (idx, file) {
+                xml += "\n<file>";
+                xml += "\n<file_name>" + file.filename + "</file_name>";
+                xml += "\n<display_name>" + file.displayname + "</display_name>";                
+                xml += "\n<file_path>" + file.filepath + "</file_path>";
+                xml += "\n<uploaded_by>" + "Get User ID" + "</uploaded_by>";
+                xml += "\n</file>";
+            })
+            xml += "\n</files>";
+        }
+
+        xml += "\n</folder>";
+
+        return xml;
+    }
+
+</script>
